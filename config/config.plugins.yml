@@ -1,0 +1,4 @@
+SerpentSuperHexagonGameAgentPlugin:
+  frame_handler: PLAY
+SerpentSuperHexagonGamePlugin:
+  fps: 5
