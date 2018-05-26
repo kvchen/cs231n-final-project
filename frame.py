@@ -1,17 +1,23 @@
 import numpy as np
 import skimage.transform
 import skimage.color
-import sklearn.preprocessing
+import skimage.filters
 
 
 class FrameProcessor:
-    def __init__(self, buffer_size=5, output_shape=(100, 100)):
+    def __init__(self, buffer_size=4, output_shape=(100, 100)):
         self.buffer_size = buffer_size
         self.buffer = []
 
         self.output_shape = output_shape
+        self.sequence_shape = output_shape + (buffer_size,)
+
         self.processing_pipeline = [
-            lambda frame: skimage.transform.resize(frame, output_shape),
+            lambda frame: skimage.transform.resize(
+                frame,
+                output_shape,
+                # anti_aliasing=True,
+            ),
             skimage.color.rgb2gray,
         ]
 
@@ -30,6 +36,6 @@ class FrameProcessor:
 
     def get_sequence(self):
         if len(self.buffer) < self.buffer_size:
-            return None
+            return np.zeros(self.sequence_shape)
         else:
             return np.stack(self.buffer, axis=2)

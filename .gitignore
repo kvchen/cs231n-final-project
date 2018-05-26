@@ -1,6 +1,9 @@
 # Cruft
 .DS_Store
 
+# Checkpoints
+checkpoint/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

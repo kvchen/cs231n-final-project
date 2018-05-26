@@ -1,33 +1,80 @@
 import os
 import numpy as np
-import random
 import subprocess
 import zmq
 
-import scipy
+from tensorforce.environments import Environment
+
+ACTION_NAMES = ['stop', 'left', 'right']
+ACTION_KEYS = [[], ['left'], ['right']]
+
+ACTION_STOP = 0
+ACTION_LEFT = 1
+ACTION_RIGHT = 2
 
 
-class SuperHexagonEnvironment:
-    def __init__(self, controller, agent, frame_processor,
-                 frame_shape=(480, 768, 3)):
+class SuperHexagonEnvironment(Environment):
+    def __init__(self, controller, frame_processor, frame_shape=(480, 768, 3)):
         self.controller = controller
-        self.agent = agent
         self.frame_processor = frame_processor
         self.frame_shape = frame_shape
+        self.frame_len = np.prod(frame_shape)
 
-        # This is used to actually get into the game mode.
-        self.setup_moves = {
-            60: ['space'],
-            62: [],
-            # 90: ['right'],
-            # 92: [],
-            # 100: ['right'],
-            # 102: [],
-            110: ['space'],
-            112: [],
+        # Initialize game process and server
+        self.setup_socket()
+        self.start_game_process()
+
+        # Navigate into the actual game
+        self.goto_game()
+
+    def execute(self, actions):
+        reward = 1
+        terminal = False
+
+        self.controller.handle_keys(ACTION_KEYS[actions])
+        frame = self.recv_frame()
+        self.frame_processor.push_frame(frame)
+
+        if np.allclose(frame, 255):
+            reward = -1
+            terminal = True
+
+        return self.state, terminal, reward
+
+    def reset(self):
+        # self.do_moves({
+        #     0: ['esc'],
+        #     2: [],
+        # })
+        self.handle_death()
+        return self.state
+
+    def close(self):
+        self.controller.handle_keys([])
+        self.game_process.kill()
+
+    @property
+    def state(self):
+        """Fetches the current sequence from the frame processor and returns
+        it as the state.
+        """
+        return self.frame_processor.get_sequence()
+
+    @property
+    def states(self):
+        return {
+            "shape": self.frame_processor.sequence_shape,
+            "type": "float32",
         }
 
-    def start_game(self):
+    @property
+    def actions(self):
+        return {
+            "num_actions": len(ACTION_NAMES),
+            "type": "int",
+        }
+
+    def start_game_process(self):
         """Starts the game with our hook loaded. The game will wait until our
         agent server begins accepting frames.
         """
@@ -41,85 +88,70 @@ class SuperHexagonEnvironment:
         args = ["bash", game_path]
 
         self.controller.handle_keys([])
+        self.game_process = subprocess.Popen(
+            args,
+            env=env,
+            stdout=subprocess.DEVNULL,
+        )
 
-        self.frame_counter = 0
-        self.dead_until = None
+    def goto_game(self):
+        self.do_moves({
+            60: ['space'],
+            62: [],
+            90: ['right'],
+            92: [],
+            100: ['right'],
+            102: [],
+            110: ['space'],
+            112: [],
+            120: [],
+        })
 
-        self.game_process = subprocess.Popen(args, env=env)
+    def handle_death(self):
+        """Consumes frames until we can get back into a playable state."""
+        self.do_moves({
+            100: ['space'],
+            102: [],
+            140: [],
+        })
+        self.do_moves({0: [], 4: []}, push_frames=True)
 
-    def handle_game_loop(self):
-        """Here we open up a ZeroMQ server and begin accepting frames.
-        We use a server/client model where the game acts as the client and
-        sends frames to the Python server. We analyze the frame, update our
-        agent, and return a move to the client.
+    def do_moves(self, moves, push_frames=False):
+        """Consumes frames and makes the appropriate moves. Used to setup the
+        game for a new episode.
         """
-        try:
-            context = zmq.Context()
-            socket = context.socket(zmq.REP)
-            socket.bind('tcp://*:5555')
+        for i in range(max(moves)):
+            if i in moves:
+                self.controller.handle_keys(moves[i])
 
-            frame_size = np.prod(self.frame_shape)
+            frame = self.recv_frame()
+            if push_frames:
+                self.frame_processor.push_frame(frame)
 
-            prev_raw_frame = None
+    def setup_socket(self):
+        """Sets up a ZeroMQ socket that listens for new frames."""
+        context = zmq.Context()
+        socket = context.socket(zmq.REP)
+        socket.bind('tcp://*:5555')
 
-            while True:
-                raw_frame = socket.recv()
-                if len(raw_frame) < frame_size or raw_frame == prev_raw_frame:
-                    socket.send_string("");
-                    continue
+        self.prev_raw_frame = None
+        self.socket = socket
 
-                self.frame_counter += 1
-                prev_raw_frame = raw_frame
+    def recv_frame(self):
+        """Fetches a new frame from our game hook."""
+        # Spin until we get a valid frame
+        while True:
+            raw_frame = self.socket.recv()
+            self.socket.send_string("")
 
-                parsed_buff = np.frombuffer(raw_frame, dtype=np.dtype('B'))
-                frame = np.flip(np.reshape(parsed_buff, self.frame_shape), 0)
+            if (
+                len(raw_frame) == self.frame_len and
+                raw_frame != self.prev_raw_frame
+            ):
+                break
 
-                self.handle_frame(frame)
+        self.prev_raw_frame = raw_frame
 
-                socket.send_string("");
-        except KeyboardInterrupt:
-            self.controller.handle_keys([])
-            self.game_process.terminate()
-
-    def handle_frame(self, frame):
-        """Here's where our actual game logic takes place."""
-
-        self.frame_processor.push_frame(frame)
-
-        # Take actions to enter the game
-
-        if self.frame_counter <= max(self.setup_moves.keys()):
-            self.do_setup()
-            return
-
-        # If we're dead, skip through a couple of frames until we can
-        # become alive again. The agent does not act during this period.
-
-        if self.dead_until:
-            if self.frame_counter == self.dead_until - 20:
-                self.controller.handle_keys(['space'])
-            elif self.frame_counter == self.dead_until - 18:
-                self.controller.handle_keys([])
-            elif self.frame_counter > self.dead_until:
-                self.dead_until = None
-            return
-
-        # Figure out which move to make and observe the appropriate reward
-
-        sequence = self.frame_processor.get_sequence()
-        if sequence is None:
-            return
-
-        move = self.agent.generate_action(sequence)
-        self.controller.handle_keys(move)
-
-        if np.allclose(frame, 255):
-            self.agent.observe(0, terminal=True)
-            self.dead_until = self.frame_counter + 120
-        else:
-            self.agent.observe(1, terminal=False)
-
-    def do_setup(self):
-        for frame, move in self.setup_moves.items():
-            if self.frame_counter == frame:
-                self.controller.handle_keys(move)
+        parsed_buff = np.frombuffer(raw_frame, dtype=np.dtype('B'))
+        frame = np.flip(np.reshape(parsed_buff, self.frame_shape), 0)
+        return frame

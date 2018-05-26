@@ -10,8 +10,38 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <time.h>
 
 static unsigned char FRAME_BUFFER[768 * 480 * 3];
+
+time_t PREV_SEC = 0;
+suseconds_t PREV_USEC = 0;
+
+static suseconds_t TV_USEC_INCREMENT = 1667;
+
+/**
+ * We also need to hook `gettimeofday` because the game tries to lock its game
+ * logic to the framerate of 60FPS, and our model may take longer to evaluate.
+ *
+ * We can trick the game into rendering a frame for any game-time interval by
+ * adjusting TV_USEC_INCREMENT.
+ */
+int gettimeofday(struct timeval *tv, struct timezone *tz)
+{
+  static int (*lib_gettimeofday)(struct timeval *tv, struct timezone *tz) = NULL;
+  lib_gettimeofday = dlsym(RTLD_NEXT, "gettimeofday");
+
+  int ret = lib_gettimeofday(tv, tz);
+
+  PREV_USEC = (PREV_USEC + TV_USEC_INCREMENT) % 1000000;
+  tv->tv_usec = PREV_USEC;
+  if (tv->tv_usec < TV_USEC_INCREMENT) {
+    PREV_SEC++;
+  }
+  tv->tv_sec = PREV_SEC;
+
+  return ret;
+}
 
 void glClear(GLbitfield mask)
 {
@@ -33,6 +63,8 @@ void glClear(GLbitfield mask)
 
   zsock_t *req_sock = zsock_new_req("tcp://localhost:5555");
   zmsg_send(&msg, req_sock);
+
+  // The response is just used as an ack, so we just throw it away.
 
   char *move = zstr_recv(req_sock);
 
