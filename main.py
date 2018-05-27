@@ -2,15 +2,17 @@
 
 import click
 
-from environment import SuperHexagonEnvironment
-
-from agent import get_agent
-from controller import Controller
-from frame import FrameProcessor
 from tensorforce.execution import Runner
 
+from environment import SuperHexagonEnvironment
+from controller import Controller
+from frame import FrameProcessor
 
-def start_agent_mode(environment, episodes):
+from demo_recorder import DemoRecorder
+from agent import get_agent
+
+
+def start_agent_mode(environment, episodes, bootstrap):
     def episode_finished(runner, runner_id):
         """We just use this function to log some information about each
         episode.
@@ -20,7 +22,7 @@ def start_agent_mode(environment, episodes):
 
         return True
 
-    agent = get_agent(environment)
+    agent = get_agent(environment, bootstrap)
 
     runner = Runner(agent=agent, environment=environment)
     runner.run(episodes=episodes, episode_finished=episode_finished)
@@ -30,8 +32,16 @@ def start_record_mode(environment):
     """This allows us to play the game and record demos. Each demo consists of
     an array of (state, action) pairs. We can later play these demos back to
     "train" our agent.
+
+    Since keyboard listens directly to the device file, we need to use sudo
+    when invoking this script, i.e.:
+
+    $ sudo su
+    $ source .env/bin/activate
+    $ python3 main.py --mode record
     """
-    pass
+    recorder = DemoRecorder(environment)
+    recorder.start_recording()
 
 
 @click.command()
@@ -39,7 +49,9 @@ def start_record_mode(environment):
               default='agent')
 @click.option('--episodes', type=int,
               default=int(1e6))
-def main(mode, episodes):
+@click.option('--bootstrap', is_flag=True,
+              help="Use recorded demos to bootstrap training agent")
+def main(mode, episodes, bootstrap):
     frame_processor = FrameProcessor()
     environment = SuperHexagonEnvironment(
         controller=Controller(),
@@ -47,7 +59,7 @@ def main(mode, episodes):
     )
 
     if mode == 'agent':
-        start_agent_mode(environment, episodes=episodes)
+        start_agent_mode(environment, episodes=episodes, bootstrap=bootstrap)
     elif mode == 'record':
         start_record_mode(environment)
 

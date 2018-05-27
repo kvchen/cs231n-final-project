@@ -1,8 +1,9 @@
 # Cruft
 .DS_Store
 
-# Checkpoints
+# Large data
 checkpoint/
+demo/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

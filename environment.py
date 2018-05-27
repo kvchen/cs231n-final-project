@@ -28,18 +28,22 @@ class SuperHexagonEnvironment(Environment):
         self.goto_game()
 
     def execute(self, actions):
-        reward = 1
+        reward = 0.01
         terminal = False
 
         self.controller.handle_keys(ACTION_KEYS[actions])
-        frame = self.recv_frame()
-        self.frame_processor.push_frame(frame)
+        frame = self.get_and_store_frame()
 
-        if np.allclose(frame, 255):
+        if self.game_over(frame):
             reward = -1
             terminal = True
 
         return self.state, terminal, reward
+
+    def get_and_store_frame(self):
+        frame = self.recv_frame()
+        self.frame_processor.push_frame(frame)
+        return frame
 
     def reset(self):
         # self.do_moves({
@@ -52,6 +56,9 @@ class SuperHexagonEnvironment(Environment):
     def close(self):
         self.controller.handle_keys([])
         self.game_process.kill()
+
+    def game_over(self, frame):
+        return np.allclose(frame, 255)
 
     @property
     def state(self):
@@ -79,6 +86,8 @@ class SuperHexagonEnvironment(Environment):
         agent server begins accepting frames.
         """
         env = os.environ.copy()
+        env['HOME'] = '/home/kevinchen'
+
         hook_path = os.path.join('hook', 'libhook.so')
         game_path = os.path.join(env.get('HOME'), '.local', 'share', 'Steam',
                                  'steamapps', 'common', 'Super Hexagon',
