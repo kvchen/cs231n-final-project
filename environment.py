@@ -46,18 +46,8 @@ class SuperHexagonEnvironment(Environment):
 
         return self.state, terminal, reward
 
-    def get_and_store_frame(self):
-        frame = self.recv_frame()
-        if not self.game_over(frame):
-            self.frame_processor.push_frame(frame)
-
-        return frame
-
     def reset(self):
-        # self.do_moves({
-        #     0: ['esc'],
-        #     2: [],
-        # })
+        # self.do_moves({0: ['esc'], 2: []})
         self.handle_death()
         return self.state
 
@@ -89,28 +79,19 @@ class SuperHexagonEnvironment(Environment):
             "type": "int",
         }
 
-    def start_game_process(self):
-        """Starts the game with our hook loaded. The game will wait until our
-        agent server begins accepting frames.
+    # Helper methods for navigating throughout the game.
+
+    def do_moves(self, moves, push_frames=False):
+        """Consumes frames and makes the appropriate moves. Used to setup the
+        game for a new episode.
         """
-        env = os.environ.copy()
-        env['HOME'] = '/home/kevinchen'
-        env['TF_CPP_MIN_LOG_LEVEL'] = '3'
+        for i in range(max(moves)):
+            if i in moves:
+                self.controller.handle_keys(moves[i])
 
-        hook_path = os.path.join('hook', 'libhook.so')
-        game_path = os.path.join(env.get('HOME'), '.local', 'share', 'Steam',
-                                 'steamapps', 'common', 'Super Hexagon',
-                                 'SuperHexagon')
-
-        env['LD_PRELOAD'] = os.path.abspath(hook_path)
-        args = ["bash", game_path]
-
-        self.controller.handle_keys([])
-        self.game_process = subprocess.Popen(
-            args,
-            env=env,
-            stdout=subprocess.DEVNULL,
-        )
+            frame = self.recv_frame()
+            if push_frames:
+                self.frame_processor.push_frame(frame)
 
     def goto_game(self):
         self.do_moves({
@@ -134,17 +115,30 @@ class SuperHexagonEnvironment(Environment):
         })
         self.do_moves({0: [], 4: []}, push_frames=True)
 
-    def do_moves(self, moves, push_frames=False):
-        """Consumes frames and makes the appropriate moves. Used to setup the
-        game for a new episode.
-        """
-        for i in range(max(moves)):
-            if i in moves:
-                self.controller.handle_keys(moves[i])
+    # Process handling
 
-            frame = self.recv_frame()
-            if push_frames:
-                self.frame_processor.push_frame(frame)
+    def start_game_process(self):
+        """Starts the game with our hook loaded. The game will wait until our
+        agent server begins accepting frames.
+        """
+        env = os.environ.copy()
+        env['HOME'] = '/home/kevinchen'
+        env['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+        hook_path = os.path.join('hook', 'libhook.so')
+        game_path = os.path.join(env.get('HOME'), '.local', 'share', 'Steam',
+                                 'steamapps', 'common', 'Super Hexagon',
+                                 'SuperHexagon')
+
+        env['LD_PRELOAD'] = os.path.abspath(hook_path)
+        args = ["bash", game_path]
+
+        self.controller.handle_keys([])
+        self.game_process = subprocess.Popen(
+            args,
+            env=env,
+            stdout=subprocess.DEVNULL,
+        )
 
     def setup_socket(self):
         """Sets up a ZeroMQ socket that listens for new frames."""
@@ -172,4 +166,11 @@ class SuperHexagonEnvironment(Environment):
 
         parsed_buff = np.frombuffer(raw_frame, dtype=np.dtype('B'))
         frame = np.flip(np.reshape(parsed_buff, self.frame_shape), 0)
+        return frame
+
+    def get_and_store_frame(self):
+        frame = self.recv_frame()
+        if not self.game_over(frame):
+            self.frame_processor.push_frame(frame)
+
         return frame
