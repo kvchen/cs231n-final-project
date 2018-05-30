@@ -3,6 +3,7 @@ import numpy as np
 import subprocess
 import zmq
 
+# from frame_utils import get_distance_to_nearest_wall
 from tensorforce.environments import Environment
 
 ACTION_NAMES = ['stop', 'left', 'right']
@@ -28,7 +29,7 @@ class SuperHexagonEnvironment(Environment):
         self.goto_game()
 
     def execute(self, actions):
-        reward = 0.01
+        reward = 1
         terminal = False
 
         self.controller.handle_keys(ACTION_KEYS[actions])
@@ -37,12 +38,19 @@ class SuperHexagonEnvironment(Environment):
         if self.game_over(frame):
             reward = -1
             terminal = True
+        # else:
+        #     # Testing new reward function
+        #     dist_to_wall = get_distance_to_nearest_wall(frame)
+        #     if dist_to_wall is not None:
+        #         reward = (dist_to_wall - 30) / 380
 
         return self.state, terminal, reward
 
     def get_and_store_frame(self):
         frame = self.recv_frame()
-        self.frame_processor.push_frame(frame)
+        if not self.game_over(frame):
+            self.frame_processor.push_frame(frame)
+
         return frame
 
     def reset(self):
@@ -87,6 +95,7 @@ class SuperHexagonEnvironment(Environment):
         """
         env = os.environ.copy()
         env['HOME'] = '/home/kevinchen'
+        env['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
         hook_path = os.path.join('hook', 'libhook.so')
         game_path = os.path.join(env.get('HOME'), '.local', 'share', 'Steam',
@@ -113,7 +122,7 @@ class SuperHexagonEnvironment(Environment):
             102: [],
             110: ['space'],
             112: [],
-            120: [],
+            600: [],
         })
 
     def handle_death(self):

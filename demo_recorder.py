@@ -14,15 +14,18 @@ class DemoRecorder:
         self.moves = []
 
     def start_recording(self):
+        self.environment.reset()
+
         try:
             while True:
                 frame = self.environment.get_and_store_frame()
+                self.states.append(self.environment.state)
+                # self.states.append(frame)
+                self.moves.append(self.get_action())
+
                 if self.environment.game_over(frame):
                     self.flush_episode_demo()
                     self.environment.reset()
-
-                self.states.append(self.environment.state)
-                self.moves.append(self.get_action())
         except KeyboardInterrupt:
             self.environment.close()
 
