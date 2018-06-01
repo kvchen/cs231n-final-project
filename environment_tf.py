@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import signal
 import subprocess
 import zmq
 
@@ -53,7 +54,8 @@ class SuperHexagonEnvironment(Environment):
 
     def close(self):
         self.controller.handle_keys([])
-        self.game_process.kill()
+        os.killpg(os.getpgid(self.game_process), signal.SIGKILL)
+        # self.game_process.kill()
 
     def game_over(self, frame):
         return np.allclose(frame, 255)
@@ -123,7 +125,6 @@ class SuperHexagonEnvironment(Environment):
         """
         env = os.environ.copy()
         env['HOME'] = '/home/kevinchen'
-        env['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
         hook_path = os.path.join('hook', 'libhook.so')
         game_path = os.path.join(env.get('HOME'), '.local', 'share', 'Steam',
@@ -138,6 +139,7 @@ class SuperHexagonEnvironment(Environment):
             args,
             env=env,
             stdout=subprocess.DEVNULL,
+            preexec_fn=os.setsid,
         )
 
     def setup_socket(self):

@@ -2,6 +2,7 @@ import pyautogui
 
 # This removes the delay on pyautogui so we can spam actions quickly.
 pyautogui.PAUSE = 0
+pyautogui.FAILSAFE = False
 
 
 class Controller:

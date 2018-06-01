@@ -4,6 +4,7 @@
 # Large data
 checkpoint/
 demo/
+log/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

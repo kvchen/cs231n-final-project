@@ -5,13 +5,14 @@ import gym
 import logging
 import numpy as np
 import os
+import signal
 import subprocess
 import zmq
 
 from gym import spaces
 
 
-ACTION_NAMES = ['stop', 'left', 'right']
+ACTION_NAMES = ['NOOP', 'LEFT', 'RIGHT']
 ACTION_KEYS = [[], ['left'], ['right']]
 
 ACTION_STOP = 0
@@ -21,14 +22,13 @@ ACTION_RIGHT = 2
 
 class SuperHexagonEnv(gym.Env):
 
-    def __init__(self, controller, frame_processor, frame_shape=(480, 768, 3)):
+    def __init__(self, controller, frame_shape=(480, 768, 3)):
         self.__version__ = "0.0.1"
         logging.info("SuperHexagon - Version {}".format(self.__version__))
 
         # Do some initialization
 
         self.controller = controller
-        self.frame_processor = frame_processor
         self.frame_shape = frame_shape
         self.frame_len = np.prod(frame_shape)
 
@@ -37,8 +37,10 @@ class SuperHexagonEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=0,
             high=1,
-            shape=self.frame_processor.output_shape,
+            shape=self.frame_shape,
+            dtype=np.float,
         )
+        self.num_envs = 1
 
         # Initialize game process and server
         self.controller.release_keys(sum(ACTION_KEYS, []))
@@ -49,11 +51,13 @@ class SuperHexagonEnv(gym.Env):
         self.goto_game()
 
     def step(self, action):
+        self.episode_len += 1
+
         reward = 1
         terminal = False
 
         self.controller.handle_keys(ACTION_KEYS[action])
-        frame = self.get_and_store_frame()
+        frame = self.get_next_frame()
 
         if self.game_over(frame):
             reward = -1
@@ -64,31 +68,22 @@ class SuperHexagonEnv(gym.Env):
         #     if dist_to_wall is not None:
         #         reward = (dist_to_wall - 30) / 380
 
-        return self.state, reward, terminal
+        return frame, reward, terminal, {}
 
     def reset(self):
         self.handle_death()
-        return self.state
-
-    def render(self, mode):
-        """No-op. The game will render whether we want it to or not."""
-        if mode == 'rgb_array':
-            return self.state[..., -1]
-        else:
-            return super().render(mode=mode)
+        self.episode_len = 0
+        return self.get_next_frame()
 
     def close(self):
         self.controller.handle_keys([])
-        self.game_process.kill()
+        os.killpg(os.getpgid(self.game_process.pid), signal.SIGTERM)
+        # self.game_process.kill()
+
+    def get_action_meanings(self):
+        return ACTION_NAMES
 
     # Helper methods
-
-    @property
-    def state(self):
-        """Fetches the current sequence from the frame processor and returns
-        it as the state.
-        """
-        return self.frame_processor.get_sequence()
 
     def game_over(self, frame):
         return np.allclose(frame, 255)
@@ -115,10 +110,14 @@ class SuperHexagonEnv(gym.Env):
         self.game_process = subprocess.Popen(
             args,
             env=env,
-            stdout=subprocess.DEVNULL,
+            # stdout=subprocess.DEVNULL,
+            preexec_fn=os.setsid,
         )
 
     def goto_game(self):
+        """Consumes frames until we're sure we're dead. The next reset will
+        trigger a new game.
+        """
         self.do_moves({
             60: ['space'],
             62: [],
@@ -133,22 +132,16 @@ class SuperHexagonEnv(gym.Env):
 
     def handle_death(self):
         """Consumes frames until we can get back into a playable state."""
-        self.do_moves({100: ['space'], 102: [], 140: []})
+        self.do_moves({110: ['space'], 112: [], 150: [], 200: []})
 
-        # This is necessary to "seed" the frame buffer with valid frames.
-        self.do_moves({4: []}, push_frames=True)
-
-    def do_moves(self, moves, push_frames=False):
+    def do_moves(self, moves):
         """Consumes frames and makes the appropriate moves. Used to setup the
         game for a new episode.
         """
         for i in range(max(moves)):
+            self.get_next_frame()
             if i in moves:
                 self.controller.handle_keys(moves[i])
-
-            frame = self.recv_frame()
-            if push_frames:
-                self.frame_processor.push_frame(frame)
 
     def setup_socket(self):
         """Sets up a ZeroMQ socket that listens for new frames."""
@@ -159,17 +152,7 @@ class SuperHexagonEnv(gym.Env):
         self.prev_raw_frame = None
         self.socket = socket
 
-    def get_and_store_frame(self):
-        """Fetches another frame from the game hook, processes it, and stores
-        it into the frame buffer.
-        """
-        frame = self.recv_frame()
-        if not self.game_over(frame):
-            self.frame_processor.push_frame(frame)
-
-        return frame
-
-    def recv_frame(self):
+    def get_next_frame(self):
         """Fetches a new frame from our game hook. GLClear is called multiple
         times per game frame, so we want to make sure we only emit one of
         those.

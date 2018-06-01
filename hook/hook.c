@@ -16,6 +16,7 @@ static unsigned char FRAME_BUFFER[768 * 480 * 3];
 
 time_t PREV_SEC = 0;
 suseconds_t PREV_USEC = 0;
+int READY_FOR_NEXT_FRAME = 0;
 
 static suseconds_t TV_USEC_INCREMENT = 1667;
 
@@ -33,12 +34,18 @@ int gettimeofday(struct timeval *tv, struct timezone *tz)
 
   int ret = lib_gettimeofday(tv, tz);
 
-  PREV_USEC = (PREV_USEC + TV_USEC_INCREMENT) % 1000000;
-  tv->tv_usec = PREV_USEC;
-  if (tv->tv_usec < TV_USEC_INCREMENT) {
-    PREV_SEC++;
+  if (READY_FOR_NEXT_FRAME) {
+    PREV_USEC = (PREV_USEC + TV_USEC_INCREMENT) % 1000000;
+    tv->tv_usec = PREV_USEC;
+    if (tv->tv_usec < TV_USEC_INCREMENT) {
+      PREV_SEC++;
+    }
+    tv->tv_sec = PREV_SEC;
+    READY_FOR_NEXT_FRAME = 0;
+  } else {
+    tv->tv_sec = PREV_SEC;
+    tv->tv_usec = PREV_USEC;
   }
-  tv->tv_sec = PREV_SEC;
 
   return ret;
 }
@@ -67,6 +74,8 @@ void glClear(GLbitfield mask)
   // The response is just used as an ack, so we just throw it away.
 
   char *move = zstr_recv(req_sock);
+  printf("asdf\n");
+  READY_FOR_NEXT_FRAME = 1;
 
   zstr_free(&move);
   zsock_destroy(&req_sock);

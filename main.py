@@ -1,76 +1,77 @@
-#!/usr/bin/env python3
-
 import click
+import os
+import tensorflow as tf
+import time
 
-from tensorforce.execution import Runner
-
-from environment import SuperHexagonEnvironment
+from agent.ppo import wrap_env, CNNPolicy
+from baselines import deepq, logger
+from baselines.ppo2 import ppo2
 from controller import Controller
-from frame import FrameProcessor
-
-from demo_recorder import DemoRecorder
-from agent import get_dqfd_agent, get_ppo_agent
+from env import SuperHexagonEnv
 
 
-def start_agent_mode(environment, agent, episodes, bootstrap):
-    def episode_finished(runner, runner_id):
-        """We just use this function to log some information about each
-        episode.
-        """
-        if runner.episode % 100 == 0:
-            avg_reward = sum(runner.episode_rewards[-100:]) / 100
-            print(
-                "Average reward over last 100 episodes: {}".format(avg_reward),
+def train(agent, env, checkpoint_path="checkpoint"):
+    checkpoint_path = os.path.join(checkpoint_path, agent)
+
+    if agent == 'deepq':
+        model = deepq.models.cnn_to_mlp(
+            convs=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+            hiddens=[256],
+            dueling=True,
+        )
+        deepq.learn(
+            env,
+            q_func=model,
+            lr=1e-4,
+            max_timesteps=int(1e7),
+            buffer_size=10000,
+            exploration_fraction=0.1,
+            exploration_final_eps=0.01,
+            train_freq=4,
+            learning_starts=10000,
+            target_network_update_freq=1000,
+            gamma=0.99,
+            prioritized_replay=True,
+            checkpoint_freq=int(1e4),
+            checkpoint_path="checkpoint/dqn",
+        )
+    elif agent == 'ppo':
+        env = wrap_env(env)
+        with tf.Session().as_default():
+            model = ppo2.learn(
+                policy=CNNPolicy,
+                env=env,
+                nsteps=128,
+                nminibatches=4,
+                noptepochs=4,
+                ent_coef=.01,
+                lr=lambda f: f * 2.5e-4,
+                cliprange=lambda f: f * 0.1,
+                total_timesteps=int(1e7),
+                log_interval=1,
+                save_interval=int(1e3),
             )
-
-        return True
-
-    if agent == 'ppo':
-        tf_agent = get_ppo_agent(environment, bootstrap)
-    elif agent == 'dqfd':
-        tf_agent = get_dqfd_agent(environment, bootstrap)
-
-    runner = Runner(agent=tf_agent, environment=environment)
-    runner.run(episodes=episodes, episode_finished=episode_finished)
-
-
-def start_record_mode(environment):
-    """This allows us to play the game and record demos. Each demo consists of
-    an array of (state, action) pairs. We can later play these demos back to
-    "train" our agent.
-
-    Since keyboard listens directly to the device file, we need to use sudo
-    when invoking this script, i.e.:
-
-    $ sudo su
-    $ source .env/bin/activate
-    $ python3 main.py --mode record
-    """
-    recorder = DemoRecorder(environment)
-    recorder.start_recording()
+            model.save(checkpoint_path)
 
 
 @click.command()
-@click.option('--mode', type=click.Choice(['agent', 'record']),
-              default='agent')
-@click.option('--agent', type=click.Choice(['ppo', 'dqfd']),
+@click.option('--agent', type=click.Choice(['deepq', 'ppo']),
               default='ppo')
-@click.option('--episodes', type=int,
-              default=int(1e6))
-@click.option('--bootstrap', is_flag=True,
-              help="Use recorded demos to bootstrap training agent")
-def main(mode, agent, episodes, bootstrap):
-    frame_processor = FrameProcessor()
-    environment = SuperHexagonEnvironment(
-        controller=Controller(),
-        frame_processor=frame_processor,
+@click.option('--buffer-size', type=int, default=4)
+def main(agent, buffer_size):
+    logger.configure(
+        dir=os.path.join('log', str(int(time.time()))),
+        format_strs=['json'],
     )
 
-    if mode == 'agent':
-        start_agent_mode(environment, agent=agent, episodes=episodes,
-                         bootstrap=bootstrap)
-    elif mode == 'record':
-        start_record_mode(environment)
+    controller = Controller()
+    env = SuperHexagonEnv(controller=controller)
+
+    try:
+        train(agent, env)
+    except Exception as e:
+        env.close()
+        raise e
 
 
 if __name__ == "__main__":
