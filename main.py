@@ -34,7 +34,7 @@ def train(agent, env, checkpoint_path="checkpoint"):
             gamma=0.99,
             prioritized_replay=True,
             prioritized_replay_alpha=0.6,
-            checkpoint_freq=int(5e3),
+            checkpoint_freq=int(5e2),
             checkpoint_path="checkpoint/dqn",
         )
     elif agent == 'ppo':
