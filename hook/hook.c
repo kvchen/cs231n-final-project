@@ -18,7 +18,8 @@ time_t PREV_SEC = 0;
 suseconds_t PREV_USEC = 0;
 int READY_FOR_NEXT_FRAME = 0;
 
-static suseconds_t TV_USEC_INCREMENT = 1667;
+// ~ 1000000 / 60 / 2
+static suseconds_t TV_USEC_INCREMENT = 8300;
 
 /**
  * We also need to hook `gettimeofday` because the game tries to lock its game
@@ -74,7 +75,6 @@ void glClear(GLbitfield mask)
   // The response is just used as an ack, so we just throw it away.
 
   char *move = zstr_recv(req_sock);
-  printf("asdf\n");
   READY_FOR_NEXT_FRAME = 1;
 
   zstr_free(&move);

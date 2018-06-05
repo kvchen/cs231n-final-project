@@ -8,6 +8,9 @@ import os
 import signal
 import subprocess
 import zmq
+import imageio
+import time
+import random
 
 from gym import spaces
 
@@ -51,6 +54,7 @@ class SuperHexagonEnv(gym.Env):
         self.goto_game()
 
     def step(self, action):
+        # time.sleep(5)
         self.episode_len += 1
 
         reward = 1
@@ -58,6 +62,9 @@ class SuperHexagonEnv(gym.Env):
 
         self.controller.handle_keys(ACTION_KEYS[action])
         frame = self.get_next_frame()
+
+        # if self.episode_len % 30 == 0:
+        #     reward = 1
 
         if self.game_over(frame):
             reward = -1
@@ -110,7 +117,7 @@ class SuperHexagonEnv(gym.Env):
         self.game_process = subprocess.Popen(
             args,
             env=env,
-            # stdout=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
             preexec_fn=os.setsid,
         )
 
@@ -132,7 +139,7 @@ class SuperHexagonEnv(gym.Env):
 
     def handle_death(self):
         """Consumes frames until we can get back into a playable state."""
-        self.do_moves({110: ['space'], 112: [], 150: [], 200: []})
+        self.do_moves({110: ['space'], 112: [], 150: [], 190: []})
 
     def do_moves(self, moves):
         """Consumes frames and makes the appropriate moves. Used to setup the
