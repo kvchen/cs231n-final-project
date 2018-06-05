@@ -9,6 +9,12 @@ from baselines.ppo2 import ppo2
 from controller import Controller
 from env import SuperHexagonEnv
 
+DEFAULT_GAME_PATH = os.path.join(
+    os.environ.get('HOME'),
+    'superhexagon',
+    'SuperHexagon',
+)
+
 
 def train(agent, env, checkpoint_path="checkpoint"):
     checkpoint_path = os.path.join(checkpoint_path, agent)
@@ -62,15 +68,22 @@ def train(agent, env, checkpoint_path="checkpoint"):
 @click.command()
 @click.option('--agent', type=click.Choice(['deepq', 'ppo']),
               default='ppo')
-@click.option('--buffer-size', type=int, default=4)
-def main(agent, buffer_size):
+@click.option('--game-path', type=click.Path(exists=True),
+              default=DEFAULT_GAME_PATH)
+@click.option('--hook-path', type=click.Path(exists=True),
+              default=os.path.join('hook', 'libhook.so'))
+def main(agent, game_path, hook_path):
     logger.configure(
         dir=os.path.join('log', agent, str(int(time.time()))),
         format_strs=['json'],
     )
 
     controller = Controller()
-    env = SuperHexagonEnv(controller=controller)
+    env = SuperHexagonEnv(
+        controller=controller,
+        game_path=game_path,
+        hook_path=hook_path,
+    )
 
     try:
         train(agent, env)

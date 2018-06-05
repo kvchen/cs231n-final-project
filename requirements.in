@@ -1,4 +1,11 @@
-tensorflow-gpu
-baselines
+click
+gym
+tensorflow
+#tensorflow-gpu
+matplotlib
 numpy
-
+opencv-contrib-python
+pandas
+pyautogui
+seaborn
+Xlib

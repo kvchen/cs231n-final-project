@@ -25,13 +25,17 @@ ACTION_RIGHT = 2
 
 class SuperHexagonEnv(gym.Env):
 
-    def __init__(self, controller, frame_shape=(480, 768, 3)):
+    def __init__(self, controller, game_path, hook_path,
+                 frame_shape=(480, 768, 3)):
         self.__version__ = "0.0.1"
         logging.info("SuperHexagon - Version {}".format(self.__version__))
 
         # Do some initialization
 
         self.controller = controller
+        self.game_path = game_path
+        self.hook_path = hook_path
+
         self.frame_shape = frame_shape
         self.frame_len = np.prod(frame_shape)
 
@@ -102,16 +106,10 @@ class SuperHexagonEnv(gym.Env):
         agent server begins accepting frames.
         """
         env = os.environ.copy()
-        env['HOME'] = '/home/kevinchen'
-        env['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-        game_path = os.path.join(env.get('HOME'), '.local', 'share', 'Steam',
-                                 'steamapps', 'common', 'Super Hexagon',
-                                 'SuperHexagon')
-        args = ["bash", game_path]
+        args = ["bash", self.game_path]
 
         # Ensure that we're hooking our game process
-        hook_path = os.path.join('hook', 'libhook.so')
+        hook_path = self.hook_path
         env['LD_PRELOAD'] = os.path.abspath(hook_path)
 
         self.game_process = subprocess.Popen(
