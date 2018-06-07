@@ -20,19 +20,21 @@ def train(agent, env, checkpoint_path="checkpoint"):
     checkpoint_path = os.path.join(checkpoint_path, agent)
 
     if agent == 'deepq':
-        env = wrap_env_dqn(env)
+        wrapped_env = wrap_env_dqn(env)
+        train = True
+
         model = deepq.models.cnn_to_mlp(
             convs=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
             hiddens=[256],
             dueling=True,
         )
-        deepq.learn(
-            env,
+        agent = deepq.learn(
+            wrapped_env,
             q_func=model,
             lr=5e-4,
-            max_timesteps=int(1e7),
+            max_timesteps=(int(1e7) if train else 0),
             buffer_size=50000,
-            exploration_fraction=0.1,
+            exploration_fraction=0.2,
             exploration_final_eps=0.01,
             train_freq=4,
             learning_starts=10000,
@@ -41,8 +43,19 @@ def train(agent, env, checkpoint_path="checkpoint"):
             prioritized_replay=True,
             prioritized_replay_alpha=0.6,
             checkpoint_freq=int(5e2),
-            checkpoint_path="checkpoint/dqn",
+            checkpoint_path="checkpoint/dqn_best",
         )
+
+        env.goto_game()
+
+        if not train:
+            while True:
+                obs, done = wrapped_env.reset(), False
+                episode_rew = 0
+                while not done:
+                    obs, rew, done, _ = wrapped_env.step(agent(obs[None])[0])
+                    episode_rew += rew
+
     elif agent == 'ppo':
         env = wrap_env_ppo(env)
         with tf.Session().as_default():

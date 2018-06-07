@@ -130,7 +130,7 @@ def wrap_env_dqn(env):
     env = ThresholdResizeFrame(env)
     env = ClipRewardEnv(env)
     env = MaxAndSkipEnv(env, skip=4)
-    env = Monitor(env, logger.get_dir())
+    env = Monitor(env, logger.get_dir(), allow_early_resets=True)
     env = FrameStack(env, 4)
     return env
 
@@ -160,15 +160,15 @@ def ppo_cnn_model(state):
 
     c1 = tf.layers.conv2d(state, filters=32, kernel_size=8, strides=1,
                           name="c1", **conv_kwargs)
-    p1 = tf.layers.max_pooling2d(c1, pool_size=2, strides=1, name="p1",
+    p1 = tf.layers.max_pooling2d(c1, pool_size=2, strides=2, name="p1",
                                  **pool_kwargs)
     c2 = tf.layers.conv2d(p1, filters=64, kernel_size=4, strides=1,
                           name="c2", **conv_kwargs)
-    p2 = tf.layers.max_pooling2d(c2, pool_size=2, strides=1, name="p2",
+    p2 = tf.layers.max_pooling2d(c2, pool_size=2, strides=2, name="p2",
                                  **pool_kwargs)
     c3 = tf.layers.conv2d(p2, filters=64, kernel_size=3, strides=1,
                           name="c3", **conv_kwargs)
-    p3 = tf.layers.max_pooling2d(c3, pool_size=2, strides=1, name="p3",
+    p3 = tf.layers.max_pooling2d(c3, pool_size=2, strides=2, name="p3",
                                  **pool_kwargs)
     f = tf.layers.flatten(p3)
     return tf.layers.dense(f, units=512, activation=tf.nn.relu,
